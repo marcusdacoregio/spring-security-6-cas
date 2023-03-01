@@ -4,13 +4,18 @@ import org.apereo.cas.client.session.SingleSignOutFilter;
 import org.apereo.cas.client.validation.Cas20ServiceTicketValidator;
 import org.apereo.cas.client.validation.TicketValidator;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.cas.ServiceProperties;
 import org.springframework.security.cas.authentication.CasAuthenticationProvider;
 import org.springframework.security.cas.web.CasAuthenticationEntryPoint;
 import org.springframework.security.cas.web.CasAuthenticationFilter;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -18,36 +23,35 @@ import org.springframework.security.core.userdetails.UserDetailsByNameServiceWra
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.logout.LogoutFilter;
-import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 public class SecurityConfig {
+
+	@Value("${cas.base.url}")
+	private String casBaseUrl;
+
+	@Value("${cas.login.url}")
+	private String casLoginUrl;
+
+	@Autowired
+	private ServletWebServerApplicationContext context;
 
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http, UserDetailsService userDetailsService) throws Exception {
 		http
 				.authorizeHttpRequests((authorize) -> authorize
+						.requestMatchers(HttpMethod.GET, "/loggedout").permitAll()
 						.anyRequest().authenticated()
 				)
 				.exceptionHandling((exceptions) -> exceptions
 						.authenticationEntryPoint(casAuthenticationEntryPoint())
 				)
 				.logout((logout) -> logout
-						.logoutRequestMatcher(new AntPathRequestMatcher("/logout", "GET"))
-						.logoutSuccessUrl("/logout-success")
+						.logoutSuccessUrl("/loggedout")
 				)
 				.addFilter(casAuthenticationFilter(userDetailsService))
-				.addFilterBefore(new SingleSignOutFilter(), CasAuthenticationFilter.class)
-				.addFilterBefore(requestSingleLogoutFilter(), LogoutFilter.class);
+				.addFilterBefore(new SingleSignOutFilter(), CasAuthenticationFilter.class);
 		return http.build();
-	}
-
-	public LogoutFilter requestSingleLogoutFilter() {
-		LogoutFilter logoutFilter = new LogoutFilter("https://localhost:8443/cas/logout", new SecurityContextLogoutHandler());
-		logoutFilter.setFilterProcessesUrl("/logout/cas");
-		return logoutFilter;
 	}
 
 	public CasAuthenticationProvider casAuthenticationProvider(UserDetailsService userDetailsService) {
@@ -60,7 +64,7 @@ public class SecurityConfig {
 	}
 
 	private TicketValidator cas20ServiceTicketValidator() {
-		return new Cas20ServiceTicketValidator("https://localhost:8443/cas");
+		return new Cas20ServiceTicketValidator(this.casBaseUrl);
 	}
 
 	@Bean
@@ -71,7 +75,7 @@ public class SecurityConfig {
 
 	public CasAuthenticationEntryPoint casAuthenticationEntryPoint() {
 		CasAuthenticationEntryPoint casAuthenticationEntryPoint = new CasAuthenticationEntryPoint();
-		casAuthenticationEntryPoint.setLoginUrl("https://localhost:8443/cas/login");
+		casAuthenticationEntryPoint.setLoginUrl(this.casLoginUrl);
 		casAuthenticationEntryPoint.setServiceProperties(serviceProperties());
 		return casAuthenticationEntryPoint;
 	}
@@ -85,7 +89,7 @@ public class SecurityConfig {
 
 	public ServiceProperties serviceProperties() {
 		ServiceProperties serviceProperties = new ServiceProperties();
-		serviceProperties.setService("http://localhost:8081/login/cas");
+		serviceProperties.setService("http://localhost:" + context.getWebServer().getPort() + "/login/cas");
 		serviceProperties.setSendRenew(false);
 		return serviceProperties;
 	}
